@@ -1,0 +1,114 @@
+---
+title: "Titanic: Machine Learning from Disaster - Kaggle Prediction Competition"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+rm(list=ls())
+setwd("C:\\Users\\Flor\\OneDrive\\Kaggle Projects\\Titanic")
+train <- read.csv("datasets\\train.csv") # train dataset
+test <- read.csv("datasets\\test.csv") # test dataset
+#install.packages("tidyr")
+#install.packages("tidyverse")
+library(tidyverse)
+```
+
+## R Markdown
+
+The sinking of the RMS Titanic is one of the most infamous shipwrecks in history.  On April 15, 1912, during her maiden voyage, the Titanic sank after colliding with an iceberg, killing 1502 out of 2224 passengers and crew. This sensational tragedy shocked the international community and led to better safety regulations for ships.
+
+One of the reasons that the shipwreck led to such loss of life was that there were not enough lifeboats for the passengers and crew. Although there was some element of luck involved in surviving the sinking, some groups of people were more likely to survive than others, such as women, children, and the upper-class.
+
+In this challenge, we ask you to complete the analysis of what sorts of people were likely to survive. In particular, we ask you to apply the tools of machine learning to predict which passengers survived the tragedy.
+
+**Practice Skills**
+*1) Binary classification*
+*2) Python and R basics*
+
+# 1) Inspecting the dataset
+```{r echo=FALSE} 
+#echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+head(train)
+str(train)
+summary(train)
+```
+# 2) Handling missing values
+```{r echo=FALSE} 
+
+# check for missing values in the data fram train
+train %>% 
+  select_if(function(x) any(is.na(x))) %>% 
+  summarise_all(funs(sum(is.na(.)))) -> train_NA
+train_NA
+
+# Impute the missing values with mediaan imputation in numeric variables
+train %>% mutate(Age = replace(Age,
+                               is.na(Age),
+                               median(Age, na.rm = TRUE))) -> train_imputed
+```
+
+# 3) Fitting a logistic regression model
+```{r echo=FALSE}
+# Create the formula
+(fmla <- as.formula(Survived ~ . - Name - Ticket - Cabin - PassengerId)) #use all variables as explanatory except Name which has 891 levels and Ticket which has 861 levels and Cabin which has 148 levels
+
+# Fit the logistic regression model
+
+# Specify a null model with all intended predictors
+full_model <- glm(fmla, train_imputed, family = binomial)
+summary(full_model)
+
+#drop1(full_model)
+
+# Specify a null model with no predictors
+null_model <- glm(Survived ~ 1, data = train_imputed, family = "binomial")
+
+# Use a forward stepwise algorithm to build a parsimonious model
+step_model <- step(null_model, scope = list(lower = null_model, upper = full_model), direction = "forward")
+
+# Estimate the stepwise survival probability
+train_imputed$step_prob <- predict(step_model, train_imputed, type = "response")
+
+# Predict survival if probability is greater than average 
+train_imputed$pred <- ifelse(train_imputed$step_prob > mean(train_imputed$step_prob), 1, 0)
+
+# Calculate the model's accuracy
+mean(train_imputed$Survived == train_imputed$pred)
+
+```
+# 4) Predicting outcomes on the test set
+
+```{r echo=FALSE}
+# check for missing values in the data fram train
+test %>% 
+  select_if(function(x) any(is.na(x))) %>% 
+  summarise_all(funs(sum(is.na(.)))) -> test_NA
+test_NA
+
+# Impute the missing values with mediaan imputation in numeric variables
+test %>% mutate(Age = replace(Age,
+                               is.na(Age),
+                               median(Age, na.rm = TRUE)),
+                 Fare = replace(Fare,
+                               is.na(Fare),
+                               median(Fare, na.rm = TRUE))) -> test_imputed
+                               
+test_imputed %>% 
+  select_if(function(x) any(is.na(x))) %>% 
+  summarise_all(funs(sum(is.na(.)))) -> test_NA
+test_NA
+
+test_imputed$prob <- predict(step_model, test_imputed, type = "response")
+
+test_imputed$pred <- ifelse(test_imputed$prob > mean(train_imputed$step_prob), 1, 0)
+
+#Submission file must have the following: PassengerId,Survived
+test_imputed %>% mutate (Survived = pred) %>% select(PassengerId, Survived) -> Submission
+
+# Convert to csv
+
+write.csv(Submission, file = "Submission.csv", quote = FALSE, row.names = FALSE)
+```
